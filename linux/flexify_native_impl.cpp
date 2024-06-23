@@ -104,7 +104,7 @@ namespace flexify::platform_specific
     }
 
     template <>
-    void startNativeTimer<Linux>() {
+    void startNativeTimer<Linux>(std::chrono::milliseconds duration) {
         /* TODO: SHOULD THIS BE IMPLEMENTED? */
     }
 

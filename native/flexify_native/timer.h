@@ -70,7 +70,7 @@ namespace flexify {
         if (state != TimerState::Paused) return;
         timerDuration -= elapsedTime;
         endTime = fclock_t::now() + timerDuration;
-        platform_specific::startNativeTimer<P>();
+        platform_specific::startNativeTimer<P>(getRemaining());
         state = TimerState::Running;
     }
 

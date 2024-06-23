@@ -36,7 +36,7 @@ namespace flexify::platform_specific {
     TimerService<Linux>& getTimerService();
 
     template <>
-    void startNativeTimer<Linux>();
+    void startNativeTimer<Linux>(std::chrono::milliseconds duration);
 
     template <>
     void stopNativeTimer<Linux>();

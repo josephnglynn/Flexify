@@ -92,14 +92,27 @@ namespace flexify::platform_specific
         return *timer_service;
     }
 
+    UINT_PTR timer = 0;
+    static VOID CALLBACK MyTimerProc(HWND, UINT, UINT_PTR, DWORD) {
+        std::cout << "CALLBACK CALLED" << std::endl;
+        timer = 0;
+        std::cout << "THREAD: " <<  std::this_thread::get_id() << std::endl;
+        timer_service->stop();
+    }
+
     template <>
-    void startNativeTimer<Windows>() {
-        /* TODO: SHOULD THIS BE IMPLEMENTED? */
+    void startNativeTimer<Windows>(std::chrono::milliseconds duration) {
+        std::cout << "TIMER READY IN: " <<  static_cast<UINT>(duration.count()) << std::endl;
+        if (timer != 0) stopNativeTimer<Windows>();
+        std::cout << "THREAD: " <<  std::this_thread::get_id() << std::endl;
+        timer = SetTimer(nullptr, timer, static_cast<UINT>(duration.count()), MyTimerProc);
     }
 
     template <>
     void stopNativeTimer<Windows>() {
-        /* TODO: SHOULD THIS BE IMPLEMENTED? */
+        std::cout << "kill timer" << std::endl;
+        std::cout << "THREAD: " <<  std::this_thread::get_id() << std::endl;
+        KillTimer(nullptr, timer);
     }
 
     template <>

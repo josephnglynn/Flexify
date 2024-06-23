@@ -46,7 +46,7 @@ namespace flexify::platform_specific {
     TimerService<Windows>& getTimerService();
 
     template <>
-    void startNativeTimer<Windows>();
+    void startNativeTimer<Windows>(std::chrono::milliseconds duration);
 
     template <>
     void stopNativeTimer<Windows>();

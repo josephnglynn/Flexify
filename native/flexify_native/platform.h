@@ -42,7 +42,7 @@ namespace flexify {
         TimerService<P>& getTimerService();
 
         template <Platform P>
-        void startNativeTimer();
+        void startNativeTimer(std::chrono::milliseconds duration);
 
         template <Platform P>
         void stopNativeTimer();

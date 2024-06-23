@@ -42,7 +42,7 @@ bool FlutterWindow::OnCreate() {
   channel->SetMethodCallHandler(flexify::platform_specific::timer_method_call_handler);
   flexify::platform_specific::initWindows(std::move(channel));
    
-
+  std::cout << "THREAD: " <<  std::this_thread::get_id() << std::endl;
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
