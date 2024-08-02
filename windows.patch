@@ -1,0 +1,528 @@
+﻿diff --git a/lib/timer/timer_state.dart b/lib/timer/timer_state.dart
+index 9bcd2b6..ace3097 100644
+--- a/lib/timer/timer_state.dart
++++ b/lib/timer/timer_state.dart
+@@ -1,10 +1,12 @@
+ import 'dart:async';
++import 'dart:collection';
+ import 'dart:io';
+ import 'package:audioplayers/audioplayers.dart';
+ import 'package:flexify/main.dart';
+ import 'package:flexify/native_timer_wrapper.dart';
+ import 'package:flutter/foundation.dart';
+ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
++import 'package:intl/intl.dart';
+ 
+ abstract class TimerState extends ChangeNotifier {
+   String _alarmSound = "";
+@@ -51,9 +53,12 @@ abstract class TimerState extends ChangeNotifier {
+     notifyListeners();
+   }
+ 
+-  static Future<TimerState> getTimerState() async =>
+-      await (Platform.isAndroid ? AndroidTimerState() : DartTimerState())
+-          .init();
++  static Future<TimerState> getTimerState() async {
++    if (Platform.isAndroid)
++      return await AndroidTimerState().init();
++    else if (Platform.isWindows) return await WindowsTimerState().init();
++    return await DartTimerState().init();
++  }
+ }
+ 
+ class AndroidTimerState extends TimerState {
+@@ -104,7 +109,7 @@ class AndroidTimerState extends TimerState {
+   }
+ }
+ 
+-class DartTimerState extends TimerState {
++abstract class _DartTimerState extends TimerState {
+   Timer? next;
+   final player = AudioPlayer();
+   late final FlutterLocalNotificationsPlugin notificationPlugin;
+@@ -166,10 +171,16 @@ class DartTimerState extends TimerState {
+         ),
+       ],
+     );
++    const windowSettings = WindowsInitializationSettings(
++      appName: 'com.presley.flexify',
++      appUserModelId: 'FrisbeeSoftware.Flexify',
++      guid: 'cec2cbc0-7b4c-41ea-bead-ad9cd41bc1e1',
++    );
+     final initSettings = InitializationSettings(
+       linux: linuxSettings,
+       macOS: darwinSettings,
+       iOS: darwinSettings,
++      windows: windowSettings,
+       android: defaultTargetPlatform == TargetPlatform.android
+           ? const AndroidInitializationSettings('app_icon')
+           : null, // Needed to fix tests
+@@ -206,11 +217,10 @@ class DartTimerState extends TimerState {
+     );
+   }
+ 
+-  Future<void> _timerLoop(String? title) async {
+-    if (!nativeTimer.isRunning() ||
+-        nativeTimer.getRemaining().inMilliseconds <= 0)
+-      return await _notify(title, _alarmSound);
+-    final remaining = nativeTimer.getRemaining();
++  Future<void> _showNotification({
++    required String? title,
++    required Duration remaining,
++  }) async {
+     await notificationPlugin.show(
+       1,
+       title ?? "Rest timer",
+@@ -219,13 +229,21 @@ class DartTimerState extends TimerState {
+     );
+   }
+ 
++  Future<void> _timerLoop(String? title) async {
++    if (!nativeTimer.isRunning() ||
++        nativeTimer.getRemaining().inMilliseconds <= 0)
++      return await _notify(title, _alarmSound);
++    final remaining = nativeTimer.getRemaining();
++    await _showNotification(title: title, remaining: remaining);
++  }
++
+   Future<void> _startTimerLoop(String? title) async {
+     next?.cancel();
+     await player.stop();
+     await _timerLoop(title);
+     next = Timer.periodic(
+       const Duration(seconds: 1),
+-      (timer) async => await _timerLoop(title),
++          (timer) async => await _timerLoop(title),
+     );
+   }
+ 
+@@ -254,3 +272,45 @@ class DartTimerState extends TimerState {
+     await notificationPlugin.cancel(1);
+   }
+ }
++
++class DartTimerState extends _DartTimerState {}
++
++class WindowsTimerState extends _DartTimerState {
++
++  @override
++  Future<void> _showNotification({
++    required String? title,
++    required Duration remaining,
++  }) async {
++    final notificationDetails = NotificationDetails(
++      windows: WindowsNotificationDetails(
++        actions: const [
++          WindowsAction(content: "Stop", arguments: "stop"),
++          WindowsAction(content: "Add 1 min", arguments: "add"),
++        ],
++        progressBars: [
++          WindowsProgressBar(
++            id: "Countdown",
++            value: nativeTimer.getRemaining().inMilliseconds.toDouble() /
++                nativeTimer.getDuration().inMilliseconds.toDouble(),
++            status: "Resting",
++            label:
++                '${remaining.inMinutes.toString().padLeft(2, '0')}:${remaining.inSeconds.remainder(60).toString().padLeft(2, '0')}',
++            title: title ?? "Rest timer",
++          ),
++        ],
++        duration: WindowsNotificationDuration.short,
++        scenario: WindowsNotificationScenario.urgent,
++        audio: WindowsNotificationAudio.silent(),
++        subtitle: null,
++      ),
++    );
++
++    await notificationPlugin.show(
++      1,
++      null,
++      null,
++      notificationDetails,
++    );
++  }
++}
+diff --git a/pubspec.lock b/pubspec.lock
+index 1ed31d4..3f03d81 100644
+--- a/pubspec.lock
++++ b/pubspec.lock
+@@ -414,27 +414,48 @@ packages:
+   flutter_local_notifications:
+     dependency: "direct main"
+     description:
+-      name: flutter_local_notifications
+-      sha256: dd6676d8c2926537eccdf9f72128bbb2a9d0814689527b17f92c248ff192eaf3
+-      url: "https://pub.dev"
+-    source: hosted
++      path: flutter_local_notifications
++      ref: windows-ffi
++      resolved-ref: "68c03adce820d39b98ffd9791a4279459e744190"
++      url: "https://github.com/Levi-Lesches/flutter_local_notifications.git"
++    source: git
+     version: "17.2.1+2"
+   flutter_local_notifications_linux:
+-    dependency: transitive
++    dependency: "direct overridden"
+     description:
+-      name: flutter_local_notifications_linux
+-      sha256: "33f741ef47b5f63cc7f78fe75eeeac7e19f171ff3c3df054d84c1e38bedb6a03"
+-      url: "https://pub.dev"
+-    source: hosted
+-    version: "4.0.0+1"
++      path: flutter_local_notifications_linux
++      ref: windows-ffi
++      resolved-ref: "68c03adce820d39b98ffd9791a4279459e744190"
++      url: "https://github.com/Levi-Lesches/flutter_local_notifications.git"
++    source: git
++    version: "4.0.1"
+   flutter_local_notifications_platform_interface:
+-    dependency: transitive
++    dependency: "direct overridden"
+     description:
+-      name: flutter_local_notifications_platform_interface
+-      sha256: "85f8d07fe708c1bdcf45037f2c0109753b26ae077e9d9e899d55971711a4ea66"
+-      url: "https://pub.dev"
+-    source: hosted
+-    version: "7.2.0"
++      path: flutter_local_notifications_platform_interface
++      ref: windows-ffi
++      resolved-ref: "68c03adce820d39b98ffd9791a4279459e744190"
++      url: "https://github.com/Levi-Lesches/flutter_local_notifications.git"
++    source: git
++    version: "7.3.0"
++  flutter_local_notifications_windows:
++    dependency: "direct overridden"
++    description:
++      path: flutter_local_notifications_windows
++      ref: windows-ffi
++      resolved-ref: "68c03adce820d39b98ffd9791a4279459e744190"
++      url: "https://github.com/Levi-Lesches/flutter_local_notifications.git"
++    source: git
++    version: "1.0.0"
++  flutter_local_notifications_workspace:
++    dependency: "direct overridden"
++    description:
++      path: "."
++      ref: windows-ffi
++      resolved-ref: "68c03adce820d39b98ffd9791a4279459e744190"
++      url: "https://github.com/Levi-Lesches/flutter_local_notifications.git"
++    source: git
++    version: "0.0.0"
+   flutter_plugin_android_lifecycle:
+     dependency: transitive
+     description:
+diff --git a/pubspec.yaml b/pubspec.yaml
+index 33bba28..64a6de9 100644
+--- a/pubspec.yaml
++++ b/pubspec.yaml
+@@ -43,6 +43,31 @@ dev_dependencies:
+     git:
+       url: https://github.com/insertjokehere/msix.git
+       ref: msvc_redist
++dependency_overrides:
++  flutter_local_notifications:
++    git:
++      url: https://github.com/Levi-Lesches/flutter_local_notifications.git
++      ref: windows-ffi
++      path: flutter_local_notifications
++  flutter_local_notifications_windows:
++    git:
++      url: https://github.com/Levi-Lesches/flutter_local_notifications.git
++      ref: windows-ffi
++      path: flutter_local_notifications_windows
++  flutter_local_notifications_linux:
++    git:
++      url: https://github.com/Levi-Lesches/flutter_local_notifications.git
++      ref: windows-ffi
++      path: flutter_local_notifications_linux
++  flutter_local_notifications_workspace:
++    git:
++      url: https://github.com/Levi-Lesches/flutter_local_notifications.git
++      ref: windows-ffi
++  flutter_local_notifications_platform_interface:
++    git:
++      url: https://github.com/Levi-Lesches/flutter_local_notifications.git
++      ref: windows-ffi
++      path: flutter_local_notifications_platform_interface
+ flutter:
+   uses-material-design: true
+   assets:
+diff --git a/windows.patch b/windows.patch
+new file mode 100644
+index 0000000..6ff2fc6
+--- /dev/null
++++ b/windows.patch
+@@ -0,0 +1,261 @@
++´╗┐diff --git a/lib/timer/timer_state.dart b/lib/timer/timer_state.dart
++index 9bcd2b6..ace3097 100644
++--- a/lib/timer/timer_state.dart
+++++ b/lib/timer/timer_state.dart
++@@ -1,10 +1,12 @@
++ import 'dart:async';
+++import 'dart:collection';
++ import 'dart:io';
++ import 'package:audioplayers/audioplayers.dart';
++ import 'package:flexify/main.dart';
++ import 'package:flexify/native_timer_wrapper.dart';
++ import 'package:flutter/foundation.dart';
++ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+++import 'package:intl/intl.dart';
++ 
++ abstract class TimerState extends ChangeNotifier {
++   String _alarmSound = "";
++@@ -51,9 +53,12 @@ abstract class TimerState extends ChangeNotifier {
++     notifyListeners();
++   }
++ 
++-  static Future<TimerState> getTimerState() async =>
++-      await (Platform.isAndroid ? AndroidTimerState() : DartTimerState())
++-          .init();
+++  static Future<TimerState> getTimerState() async {
+++    if (Platform.isAndroid)
+++      return await AndroidTimerState().init();
+++    else if (Platform.isWindows) return await WindowsTimerState().init();
+++    return await DartTimerState().init();
+++  }
++ }
++ 
++ class AndroidTimerState extends TimerState {
++@@ -104,7 +109,7 @@ class AndroidTimerState extends TimerState {
++   }
++ }
++ 
++-class DartTimerState extends TimerState {
+++abstract class _DartTimerState extends TimerState {
++   Timer? next;
++   final player = AudioPlayer();
++   late final FlutterLocalNotificationsPlugin notificationPlugin;
++@@ -166,10 +171,16 @@ class DartTimerState extends TimerState {
++         ),
++       ],
++     );
+++    const windowSettings = WindowsInitializationSettings(
+++      appName: 'com.presley.flexify',
+++      appUserModelId: 'FrisbeeSoftware.Flexify',
+++      guid: 'cec2cbc0-7b4c-41ea-bead-ad9cd41bc1e1',
+++    );
++     final initSettings = InitializationSettings(
++       linux: linuxSettings,
++       macOS: darwinSettings,
++       iOS: darwinSettings,
+++      windows: windowSettings,
++       android: defaultTargetPlatform == TargetPlatform.android
++           ? const AndroidInitializationSettings('app_icon')
++           : null, // Needed to fix tests
++@@ -206,11 +217,10 @@ class DartTimerState extends TimerState {
++     );
++   }
++ 
++-  Future<void> _timerLoop(String? title) async {
++-    if (!nativeTimer.isRunning() ||
++-        nativeTimer.getRemaining().inMilliseconds <= 0)
++-      return await _notify(title, _alarmSound);
++-    final remaining = nativeTimer.getRemaining();
+++  Future<void> _showNotification({
+++    required String? title,
+++    required Duration remaining,
+++  }) async {
++     await notificationPlugin.show(
++       1,
++       title ?? "Rest timer",
++@@ -219,13 +229,21 @@ class DartTimerState extends TimerState {
++     );
++   }
++ 
+++  Future<void> _timerLoop(String? title) async {
+++    if (!nativeTimer.isRunning() ||
+++        nativeTimer.getRemaining().inMilliseconds <= 0)
+++      return await _notify(title, _alarmSound);
+++    final remaining = nativeTimer.getRemaining();
+++    await _showNotification(title: title, remaining: remaining);
+++  }
+++
++   Future<void> _startTimerLoop(String? title) async {
++     next?.cancel();
++     await player.stop();
++     await _timerLoop(title);
++     next = Timer.periodic(
++       const Duration(seconds: 1),
++-      (timer) async => await _timerLoop(title),
+++          (timer) async => await _timerLoop(title),
++     );
++   }
++ 
++@@ -254,3 +272,45 @@ class DartTimerState extends TimerState {
++     await notificationPlugin.cancel(1);
++   }
++ }
+++
+++class DartTimerState extends _DartTimerState {}
+++
+++class WindowsTimerState extends _DartTimerState {
+++
+++  @override
+++  Future<void> _showNotification({
+++    required String? title,
+++    required Duration remaining,
+++  }) async {
+++    final notificationDetails = NotificationDetails(
+++      windows: WindowsNotificationDetails(
+++        actions: const [
+++          WindowsAction(content: "Stop", arguments: "stop"),
+++          WindowsAction(content: "Add 1 min", arguments: "add"),
+++        ],
+++        progressBars: [
+++          WindowsProgressBar(
+++            id: "Countdown",
+++            value: nativeTimer.getRemaining().inMilliseconds.toDouble() /
+++                nativeTimer.getDuration().inMilliseconds.toDouble(),
+++            status: "Resting",
+++            label:
+++                '${remaining.inMinutes.toString().padLeft(2, '0')}:${remaining.inSeconds.remainder(60).toString().padLeft(2, '0')}',
+++            title: title ?? "Rest timer",
+++          ),
+++        ],
+++        duration: WindowsNotificationDuration.short,
+++        scenario: WindowsNotificationScenario.urgent,
+++        audio: WindowsNotificationAudio.silent(),
+++        subtitle: null,
+++      ),
+++    );
+++
+++    await notificationPlugin.show(
+++      1,
+++      null,
+++      null,
+++      notificationDetails,
+++    );
+++  }
+++}
++diff --git a/pubspec.lock b/pubspec.lock
++index 1ed31d4..3f03d81 100644
++--- a/pubspec.lock
+++++ b/pubspec.lock
++@@ -414,27 +414,48 @@ packages:
++   flutter_local_notifications:
++     dependency: "direct main"
++     description:
++-      name: flutter_local_notifications
++-      sha256: dd6676d8c2926537eccdf9f72128bbb2a9d0814689527b17f92c248ff192eaf3
++-      url: "https://pub.dev"
++-    source: hosted
+++      path: flutter_local_notifications
+++      ref: windows-ffi
+++      resolved-ref: "68c03adce820d39b98ffd9791a4279459e744190"
+++      url: "https://github.com/Levi-Lesches/flutter_local_notifications.git"
+++    source: git
++     version: "17.2.1+2"
++   flutter_local_notifications_linux:
++-    dependency: transitive
+++    dependency: "direct overridden"
++     description:
++-      name: flutter_local_notifications_linux
++-      sha256: "33f741ef47b5f63cc7f78fe75eeeac7e19f171ff3c3df054d84c1e38bedb6a03"
++-      url: "https://pub.dev"
++-    source: hosted
++-    version: "4.0.0+1"
+++      path: flutter_local_notifications_linux
+++      ref: windows-ffi
+++      resolved-ref: "68c03adce820d39b98ffd9791a4279459e744190"
+++      url: "https://github.com/Levi-Lesches/flutter_local_notifications.git"
+++    source: git
+++    version: "4.0.1"
++   flutter_local_notifications_platform_interface:
++-    dependency: transitive
+++    dependency: "direct overridden"
++     description:
++-      name: flutter_local_notifications_platform_interface
++-      sha256: "85f8d07fe708c1bdcf45037f2c0109753b26ae077e9d9e899d55971711a4ea66"
++-      url: "https://pub.dev"
++-    source: hosted
++-    version: "7.2.0"
+++      path: flutter_local_notifications_platform_interface
+++      ref: windows-ffi
+++      resolved-ref: "68c03adce820d39b98ffd9791a4279459e744190"
+++      url: "https://github.com/Levi-Lesches/flutter_local_notifications.git"
+++    source: git
+++    version: "7.3.0"
+++  flutter_local_notifications_windows:
+++    dependency: "direct overridden"
+++    description:
+++      path: flutter_local_notifications_windows
+++      ref: windows-ffi
+++      resolved-ref: "68c03adce820d39b98ffd9791a4279459e744190"
+++      url: "https://github.com/Levi-Lesches/flutter_local_notifications.git"
+++    source: git
+++    version: "1.0.0"
+++  flutter_local_notifications_workspace:
+++    dependency: "direct overridden"
+++    description:
+++      path: "."
+++      ref: windows-ffi
+++      resolved-ref: "68c03adce820d39b98ffd9791a4279459e744190"
+++      url: "https://github.com/Levi-Lesches/flutter_local_notifications.git"
+++    source: git
+++    version: "0.0.0"
++   flutter_plugin_android_lifecycle:
++     dependency: transitive
++     description:
++diff --git a/pubspec.yaml b/pubspec.yaml
++index 33bba28..64a6de9 100644
++--- a/pubspec.yaml
+++++ b/pubspec.yaml
++@@ -43,6 +43,31 @@ dev_dependencies:
++     git:
++       url: https://github.com/insertjokehere/msix.git
++       ref: msvc_redist
+++dependency_overrides:
+++  flutter_local_notifications:
+++    git:
+++      url: https://github.com/Levi-Lesches/flutter_local_notifications.git
+++      ref: windows-ffi
+++      path: flutter_local_notifications
+++  flutter_local_notifications_windows:
+++    git:
+++      url: https://github.com/Levi-Lesches/flutter_local_notifications.git
+++      ref: windows-ffi
+++      path: flutter_local_notifications_windows
+++  flutter_local_notifications_linux:
+++    git:
+++      url: https://github.com/Levi-Lesches/flutter_local_notifications.git
+++      ref: windows-ffi
+++      path: flutter_local_notifications_linux
+++  flutter_local_notifications_workspace:
+++    git:
+++      url: https://github.com/Levi-Lesches/flutter_local_notifications.git
+++      ref: windows-ffi
+++  flutter_local_notifications_platform_interface:
+++    git:
+++      url: https://github.com/Levi-Lesches/flutter_local_notifications.git
+++      ref: windows-ffi
+++      path: flutter_local_notifications_platform_interface
++ flutter:
++   uses-material-design: true
++   assets:
++diff --git a/windows/flutter/generated_plugins.cmake b/windows/flutter/generated_plugins.cmake
++index daf6f30..f621e3b 100644
++--- a/windows/flutter/generated_plugins.cmake
+++++ b/windows/flutter/generated_plugins.cmake
++@@ -13,6 +13,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
++ )
++ 
++ list(APPEND FLUTTER_FFI_PLUGIN_LIST
+++  flutter_local_notifications_windows
++ )
++ 
++ set(PLUGIN_BUNDLED_LIBRARIES)
+diff --git a/windows/flutter/generated_plugins.cmake b/windows/flutter/generated_plugins.cmake
+index daf6f30..f621e3b 100644
+--- a/windows/flutter/generated_plugins.cmake
++++ b/windows/flutter/generated_plugins.cmake
+@@ -13,6 +13,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
+ )
+ 
+ list(APPEND FLUTTER_FFI_PLUGIN_LIST
++  flutter_local_notifications_windows
+ )
+ 
+ set(PLUGIN_BUNDLED_LIBRARIES)
